@@ -100,39 +100,59 @@ class build_ext(_build_ext):
     ext.extra_link_args = libs
     _build_ext.build_extension(self, ext)
 
+# Check if MSYS2 environment
+is_msys2 = 'MSYSTEM' in os.environ
 
 if os.name == 'nt':
-  # Must pre-install sentencepice into build directory.
+  # Must pre-install sentencepiece into build directory.
   arch = 'win32'
   if sys.maxsize > 2**32:
     arch = 'amd64'
-  if os.path.exists('..\\build\\root_{}\\lib'.format(arch)):
-    cflags = ['/std:c++17', '/I..\\build\\root_{}\\include'.format(arch)]
+  
+  # Check compiler
+  is_msvc = True  # default to MSVC
+  if is_msys2:
+    is_msvc = False
+  
+  # Choose flags accordingly
+  cxx_std_flag = '/std:c++17' if is_msvc else '-std=c++17'
+  
+  if os.path.exists('../build/root_{}/lib'.format(arch)):
+    cflags = [cxx_std_flag, '-I../build/root_{}/include'.format(arch)]
     libs = [
-        '..\\build\\root_{}\\lib\\sentencepiece.lib'.format(arch),
-        '..\\build\\root_{}\\lib\\sentencepiece_train.lib'.format(arch),
+        '../build/root_{}/lib/sentencepiece.lib'.format(arch),
+        '../build/root_{}/lib/sentencepiece_train.lib'.format(arch),
     ]
-  elif os.path.exists('..\\build\\root\\lib'):
-    cflags = ['/std:c++17', '/I..\\build\\root\\include']
+  elif os.path.exists('../build/root/lib'):
+    cflags = [cxx_std_flag, '-I../build/root/include']
     libs = [
-        '..\\build\\root\\lib\\sentencepiece.lib',
-        '..\\build\\root\\lib\\sentencepiece_train.lib',
+        '../build/root/lib/sentencepiece.lib',
+        '../build/root/lib/sentencepiece_train.lib',
     ]
   else:
     # build library locally with cmake and vc++.
     cmake_arch = 'Win32'
     if arch == 'amd64':
       cmake_arch = 'x64'
-    subprocess.check_call([
-        'cmake',
-        'sentencepiece',
-        '-A',
-        cmake_arch,
-        '-B',
-        'build',
-        '-DSPM_ENABLE_SHARED=OFF',
-        '-DCMAKE_INSTALL_PREFIX=build\\root',
-    ])
+    cmake_args = [
+    'cmake',
+    '../',
+    '-B',
+    'build',
+    '-DSPM_ENABLE_SHARED=OFF',
+    '-DCMAKE_INSTALL_PREFIX=build\\root',
+]
+
+    # Add the architecture flag if MSVC is being used
+    if not is_msys2:
+        cmake_args.insert(2, '-A')
+        cmake_args.insert(3, cmake_arch)
+    else:
+        cmake_args.append('-G')
+        cmake_args.append('MSYS Makefiles')
+
+    subprocess.check_call(cmake_args)
+
     subprocess.check_call([
         'cmake',
         '--build',
@@ -144,11 +164,18 @@ if os.name == 'nt':
         '--parallel',
         '8',
     ])
-    cflags = ['/std:c++17', '/I.\\build\\root\\include']
-    libs = [
-        '.\\build\\root\\lib\\sentencepiece.lib',
-        '.\\build\\root\\lib\\sentencepiece_train.lib',
-    ]
+    if is_msys2:
+      cflags = ['-std=c++17', '-I./build/root/include']
+      libs = [
+          './build/root/lib/libsentencepiece.a',
+          './build/root/lib/libsentencepiece_train.a',
+      ]
+    else:
+      cflags = ['/std:c++17', '/I.\\build\\root\\include']
+      libs = [
+          '.\\build\\root\\lib\\sentencepiece.lib',
+          '.\\build\\root\\lib\\sentencepiece_train.lib',
+      ]
 
   SENTENCEPIECE_EXT = Extension(
       'sentencepiece._sentencepiece',
